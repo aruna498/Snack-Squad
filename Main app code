@@ -1,0 +1,135 @@
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///snack_squad.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+CORS(app)
+
+# Database Models
+class Snack(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    price = db.Column(db.Float, nullable=False)
+    category = db.Column(db.String(50), nullable=False)
+
+class Order(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    customer_name = db.Column(db.String(100), nullable=False)
+    address = db.Column(db.String(200), nullable=False)
+    snack_ids = db.Column(db.String(500), nullable=False)  # Comma-separated snack IDs
+    total_price = db.Column(db.Float, nullable=False)
+
+# Routes
+@app.route('/snacks', methods=['GET'])
+def get_snacks():
+    snacks = Snack.query.all()
+    return jsonify([{'id': s.id, 'name': s.name, 'price': s.price, 'category': s.category} for s in snacks])
+
+@app.route('/snacks', methods=['POST'])
+def add_snack():
+    data = request.json
+    snack = Snack(name=data['name'], price=data['price'], category=data['category'])
+    db.session.add(snack)
+    db.session.commit()
+    return jsonify({'message': 'Snack added successfully'}), 201
+
+@app.route('/order', methods=['POST'])
+def create_order():
+    data = request.json
+    order = Order(
+        customer_name=data['customer_name'],
+        address=data['address'],
+        snack_ids=','.join(map(str, data['snack_ids'])),
+        total_price=data['total_price']
+    )
+    db.session.add(order)
+    db.session.commit()
+    return jsonify({'message': 'Order placed successfully'}), 201
+
+if __name__ == '__main__':
+    db.create_all()
+    app.run(debug=True)
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snack Squad</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .snack { margin: 10px 0; }
+        .order-form { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Welcome to Snack Squad</h1>
+    <h2>Available Snacks</h2>
+    <div id="snacks"></div>
+
+    <h2>Place Your Order</h2>
+    <div class="order-form">
+        <input type="text" id="customer-name" placeholder="Your Name" required>
+        <input type="text" id="address" placeholder="Delivery Address" required>
+        <button onclick="placeOrder()">Order Now</button>
+    </div>
+
+    <script>
+        const apiUrl = 'http://127.0.0.1:5000';
+
+        async function fetchSnacks() {
+            const response = await fetch(`${apiUrl}/snacks`);
+            const snacks = await response.json();
+            const snackList = document.getElementById('snacks');
+            snacks.forEach(snack => {
+                const div = document.createElement('div');
+                div.className = 'snack';
+                div.innerHTML = `
+                    <input type="checkbox" value="${snack.id}" class="snack-checkbox">
+                    <strong>${snack.name}</strong> - $${snack.price} (${snack.category})
+                `;
+                snackList.appendChild(div);
+            });
+        }
+
+        async function placeOrder() {
+            const name = document.getElementById('customer-name').value;
+            const address = document.getElementById('address').value;
+            const selectedSnacks = Array.from(document.querySelectorAll('.snack-checkbox:checked'))
+                .map(cb => parseInt(cb.value));
+
+            if (!name || !address || selectedSnacks.length === 0) {
+                alert('Please fill all fields and select at least one snack.');
+                return;
+            }
+
+            const response = await fetch(`${apiUrl}/order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer_name: name,
+                    address: address,
+                    snack_ids: selectedSnacks,
+                    total_price: selectedSnacks.length * 5  // Assume $5 per snack for simplicity
+                })
+            });
+
+            if (response.ok) {
+                alert('Order placed successfully!');
+                document.getElementById('customer-name').value = '';
+                document.getElementById('address').value = '';
+                document.querySelectorAll('.snack-checkbox').forEach(cb => cb.checked = false);
+            } else {
+                alert('Failed to place the order.');
+            }
+        }
+
+        fetchSnacks();
+    </script>
+</body>
+</html>
